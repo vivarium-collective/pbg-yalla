@@ -59,6 +59,19 @@ class YallaProcess(Process):
         # Optional confining wall (soft spherical boundary)
         'wall_radius': {'_type': 'float', '_default': 0.0},
         'wall_strength': {'_type': 'float', '_default': 5.0},
+        # Optional chemotactic field: cells climb the gradient of a
+        # morphogen c(x) = exp(-|x - source| / decay_length) emanating
+        # from a fixed point source. ``chemotaxis_responsive_types`` is
+        # a comma-separated string of type indices that respond (e.g.
+        # ``'0'`` for type 0 only, ``'0,2'`` for types 0 and 2). Empty
+        # string means every type responds. A string is used because
+        # process-bigraph config merging treats integer 0 as unset.
+        'chemotaxis_strength': {'_type': 'float', '_default': 0.0},
+        'chemotaxis_source_x': {'_type': 'float', '_default': 0.0},
+        'chemotaxis_source_y': {'_type': 'float', '_default': 0.0},
+        'chemotaxis_source_z': {'_type': 'float', '_default': 0.0},
+        'chemotaxis_decay_length': {'_type': 'float', '_default': 2.0},
+        'chemotaxis_responsive_types': {'_type': 'string', '_default': ''},
     }
 
     def __init__(self, config=None, core=None):
@@ -147,13 +160,45 @@ class YallaProcess(Process):
         direction = -positions / np.maximum(r, 1e-9)
         return cfg['wall_strength'] * overflow * direction
 
+    def _chemotaxis_force(self, positions, types):
+        """Directed migration up an exponential morphogen gradient.
+
+        Morphogen concentration ``c(x) = exp(-|x - source| / L)``. The
+        analytical gradient ``grad c = -c * (x - source) / (L * |x - s|)``
+        points from x toward the source. Force on cell i is
+        ``F_chemo = -strength * grad c(x_i)`` — pulling up the gradient.
+        """
+        cfg = self.config
+        if cfg['chemotaxis_strength'] <= 0:
+            return 0.0
+        source = np.array([
+            cfg['chemotaxis_source_x'],
+            cfg['chemotaxis_source_y'],
+            cfg['chemotaxis_source_z'],
+        ])
+        L = max(cfg['chemotaxis_decay_length'], 1e-6)
+        disp = positions - source  # (N, 3) pointing FROM source TO cell
+        d = np.linalg.norm(disp, axis=1, keepdims=True)
+        safe = np.maximum(d, 1e-9)
+        c = np.exp(-d / L)  # concentration at each cell
+        # Pull toward source (opposite of disp direction), scaled by c/L
+        F = -cfg['chemotaxis_strength'] * c * disp / (L * safe)
+        spec = cfg['chemotaxis_responsive_types'].strip()
+        if spec:
+            allowed = {int(x) for x in spec.split(',') if x.strip()}
+            mask = np.isin(types, list(allowed)).astype(np.float64)[:, None]
+            F = F * mask
+        return F
+
     def _take_step(self, dt):
         """Compute pair-wise forces and advance positions by one Euler step.
 
-        Mirrors yalla's ``cells.take_step<force>(dt)`` semantics.
+        Mirrors yalla's ``cells.take_step<force>(dt)`` semantics. Adds
+        optional wall + chemotaxis terms on top of the pair-wise kernel.
         """
         forces = self._force_fn(self._positions, self._types, self._force_params())
         forces = forces + self._wall_force(self._positions)
+        forces = forces + self._chemotaxis_force(self._positions, self._types)
         self._positions = self._positions + dt * forces / self.config['damping']
 
     def _proliferate(self, dt):

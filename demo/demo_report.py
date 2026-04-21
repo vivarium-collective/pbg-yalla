@@ -81,6 +81,48 @@ CONFIGS = [
         'color_by': 'type',
     },
     {
+        'id': 'chemotaxis',
+        'title': 'Chemotactic Aggregation',
+        'subtitle': 'Type-selective migration up a morphogen gradient',
+        'description': (
+            'One hundred eighty agents of two types are dispersed in a '
+            'cuboidal region. A morphogen source sits at (-4, 0, 0), '
+            'producing an exponentially decaying concentration field '
+            'c(x) = exp(-|x - source| / L) with L = 2.5. Only type-0 '
+            'cells express the receptor, so only they climb the gradient; '
+            'type-1 cells stay put unless dragged by adhesion. The responsive '
+            'population migrates ballistically toward the source and '
+            'aggregates into a compact cluster. This is the core motif '
+            'behind morphogen-guided tissue patterning, convergent migration, '
+            'and immune-cell homing — and complements yalla\'s '
+            'examples/gradient.cu and examples/wnt.cu.'
+        ),
+        'config': {
+            'n_cells': 180,
+            'force_kernel': 'relu',
+            'r_max': 1.0, 'dt': 0.05,
+            'init': 'random_sphere', 'init_dist': 1.2,
+            'n_types': 2, 'type_mode': 'mixed',
+            'damping': 2.0,
+            'chemotaxis_strength': 3.5,
+            'chemotaxis_source_x': -4.0,
+            'chemotaxis_source_y': 0.0,
+            'chemotaxis_source_z': 0.0,
+            'chemotaxis_decay_length': 2.5,
+            'chemotaxis_responsive_types': '0',
+            'seed': 9,
+        },
+        'n_snapshots': 35,
+        'total_time': 14.0,
+        'camera': [3.5, 4.0, 6.0],
+        'color_scheme': 'amber',
+        'color_by': 'type',
+        'source_marker': {
+            'position': [-4.0, 0.0, 0.0],
+            'radius': 2.5,
+        },
+    },
+    {
         'id': 'growth',
         'title': 'Proliferation Growth',
         'subtitle': 'Growing spheroid under ReLU adhesion + cell division (passive_growth.cu)',
@@ -120,6 +162,8 @@ COLOR_SCHEMES = {
                'accent': '#818cf8', 'text': '#312e81'},
     'emerald': {'primary': '#10b981', 'light': '#d1fae5', 'dark': '#059669',
                 'accent': '#34d399', 'text': '#064e3b'},
+    'amber': {'primary': '#f59e0b', 'light': '#fef3c7', 'dark': '#b45309',
+              'accent': '#38bdf8', 'text': '#78350f'},
     'rose': {'primary': '#f43f5e', 'light': '#ffe4e6', 'dark': '#e11d48',
              'accent': '#fb7185', 'text': '#881337'},
 }
@@ -280,6 +324,7 @@ def generate_html(sim_results, output_path):
             'extent': extent,
             'color_by': cfg['color_by'],
             'scheme': cs,
+            'source_marker': cfg.get('source_marker'),
             'charts': {
                 'times': times,
                 'gyration_radius': rgs,
@@ -603,6 +648,28 @@ function initViewer(sid) {
     new THREE.EdgesGeometry(new THREE.SphereGeometry(cageR, 16, 12)),
     new THREE.LineBasicMaterial({ color: 0xcbd5e1, transparent: true, opacity: 0.18 }));
   scene.add(cage);
+
+  // Optional morphogen source marker: a translucent sphere at the source
+  // position, sized by the decay length, to visualise the gradient field.
+  if (d.source_marker) {
+    const sm = d.source_marker;
+    const srcGlowGeo = new THREE.SphereGeometry(sm.radius, 32, 24);
+    const srcGlowMat = new THREE.MeshBasicMaterial({
+      color: d.scheme.primary, transparent: true, opacity: 0.08,
+      depthWrite: false,
+    });
+    const srcGlow = new THREE.Mesh(srcGlowGeo, srcGlowMat);
+    srcGlow.position.set(sm.position[0], sm.position[1], sm.position[2]);
+    scene.add(srcGlow);
+
+    const srcCoreGeo = new THREE.SphereGeometry(sm.radius * 0.12, 24, 18);
+    const srcCoreMat = new THREE.MeshBasicMaterial({
+      color: d.scheme.primary,
+    });
+    const srcCore = new THREE.Mesh(srcCoreGeo, srcCoreMat);
+    srcCore.position.set(sm.position[0], sm.position[1], sm.position[2]);
+    scene.add(srcCore);
+  }
 
   let maxN = 0;
   d.snapshots.forEach(s => { if (s.n_cells > maxN) maxN = s.n_cells; });

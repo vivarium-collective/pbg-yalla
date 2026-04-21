@@ -168,6 +168,73 @@ def test_snapshot(core):
     assert len(snap['types']) == 30
 
 
+def test_chemotaxis_pulls_toward_source(core):
+    # A responsive population migrates up an exponential morphogen gradient
+    # centred at (-3, 0, 0). Check the population centroid shifts toward
+    # the source.
+    import numpy as np
+    proc = YallaProcess(
+        config={
+            'n_cells': 40, 'force_kernel': 'relu',
+            'r_max': 1.0, 'dt': 0.05,
+            'init': 'random_sphere', 'init_dist': 0.6,
+            'n_types': 1, 'damping': 1.5,
+            'chemotaxis_strength': 4.0,
+            'chemotaxis_source_x': -3.0,
+            'chemotaxis_decay_length': 2.5,
+            'seed': 11,
+        },
+        core=core)
+    proc.initial_state()
+    snap0 = proc.snapshot()
+    c0 = np.array(snap0['positions']).mean(axis=0)
+
+    proc.update({}, interval=6.0)
+    snap1 = proc.snapshot()
+    c1 = np.array(snap1['positions']).mean(axis=0)
+
+    # Centroid should move toward the source (negative x)
+    assert c1[0] < c0[0] - 0.3, f'Centroid did not migrate: {c0} -> {c1}'
+
+
+def test_chemotaxis_type_selective(core):
+    # With chemotaxis_responsive_type=0, only type-0 cells feel the
+    # gradient pull. Using a dispersed initial condition so inter-type
+    # adhesion drag is minimal — the responsive type should reach the
+    # source while the inert type stays broadly in place.
+    import numpy as np
+    proc = YallaProcess(
+        config={
+            'n_cells': 40, 'force_kernel': 'spring',
+            'L_0': 0.5, 'r_cut': 0.8, 'dt': 0.05,
+            'init': 'random_sphere', 'init_dist': 2.0,
+            'n_types': 2, 'type_mode': 'mixed',
+            'damping': 1.5,
+            'chemotaxis_strength': 4.0,
+            'chemotaxis_source_x': -4.0,
+            'chemotaxis_decay_length': 3.0,
+            'chemotaxis_responsive_types': '0',
+            'seed': 3,
+        },
+        core=core)
+    proc.initial_state()
+    snap0 = proc.snapshot()
+    X0 = np.array(snap0['positions']); T0 = np.array(snap0['types'])
+    c0_resp = X0[T0 == 0].mean(axis=0)
+    c0_inert = X0[T0 == 1].mean(axis=0)
+
+    proc.update({}, interval=6.0)
+    snap1 = proc.snapshot()
+    X1 = np.array(snap1['positions']); T1 = np.array(snap1['types'])
+    c1_resp = X1[T1 == 0].mean(axis=0)
+    c1_inert = X1[T1 == 1].mean(axis=0)
+
+    dx_resp = c1_resp[0] - c0_resp[0]
+    dx_inert = c1_inert[0] - c0_inert[0]
+    assert dx_resp < dx_inert - 0.5, \
+        f'Type selectivity failed: resp={dx_resp}, inert={dx_inert}'
+
+
 def test_wall_confines_cells(core):
     # Spring alone would expand a tight cluster; the wall should hold it in
     proc = YallaProcess(
