@@ -1,0 +1,265 @@
+"""YallaProcess — pair-wise agent-based morphogenesis wrapped for process-bigraph.
+
+Bridge Process for a NumPy re-implementation of yalla's parallel agent-based
+model. Agent positions are integrated under a selectable pair-wise force
+kernel (``spring``, ``differential_adhesion``, ``relu``, ...) using the
+same Euler sub-stepping yalla uses in its CUDA ``take_step<force>(dt)``.
+
+A cell-division (proliferation) kernel, ported loosely from
+passive_growth.cu, is available via ``proliferation_rate > 0``.
+"""
+
+import numpy as np
+from process_bigraph import Process
+
+from pbg_yalla.force_kernels import FORCE_KERNELS
+from pbg_yalla.inits import random_sphere, relaxed_sphere
+
+
+class YallaProcess(Process):
+    """Time-driven pair-wise ABM process.
+
+    Internally owns positions ``X[N, 3]`` and cell types ``type[N]``.
+    On each ``update(interval)`` call, advances ``interval / dt`` sub-steps
+    using the configured force kernel; optionally proliferates agents.
+
+    Exposes scalar summary outputs through PBG ports; full agent state is
+    available via ``snapshot()`` for demos and visualisation.
+    """
+
+    config_schema = {
+        # Initial population
+        'n_cells': {'_type': 'integer', '_default': 200},
+        'init': {'_type': 'string', '_default': 'random_sphere'},
+        'init_dist': {'_type': 'float', '_default': 0.5},
+        'init_relax_steps': {'_type': 'integer', '_default': 50},
+        'seed': {'_type': 'integer', '_default': 0},
+        # Cell-type assignment
+        'n_types': {'_type': 'integer', '_default': 1},
+        'type_mode': {'_type': 'string', '_default': 'mixed'},
+        # Force kernel
+        'force_kernel': {'_type': 'string', '_default': 'spring'},
+        'L_0': {'_type': 'float', '_default': 0.5},
+        'r_cut': {'_type': 'float', '_default': 0.0},  # 0 = no cut-off (spring only)
+        'r_min': {'_type': 'float', '_default': 0.5},
+        'r_max': {'_type': 'float', '_default': 1.0},
+        'r_eq_same_lo': {'_type': 'float', '_default': 0.7},
+        'r_eq_same_hi': {'_type': 'float', '_default': 0.8},
+        'r_eq_diff_lo': {'_type': 'float', '_default': 0.8},
+        'r_eq_diff_hi': {'_type': 'float', '_default': 0.9},
+        'eps': {'_type': 'float', '_default': 1.0},
+        # Integrator
+        'dt': {'_type': 'float', '_default': 0.05},
+        'damping': {'_type': 'float', '_default': 1.0},
+        # Proliferation
+        'proliferation_rate': {'_type': 'float', '_default': 0.0},
+        'n_max': {'_type': 'integer', '_default': 5000},
+        'proliferation_mean_dist': {'_type': 'float', '_default': 0.25},
+        'proliferation_type_bias': {'_type': 'float', '_default': 0.5},
+        # Optional confining wall (soft spherical boundary)
+        'wall_radius': {'_type': 'float', '_default': 0.0},
+        'wall_strength': {'_type': 'float', '_default': 5.0},
+    }
+
+    def __init__(self, config=None, core=None):
+        super().__init__(config=config, core=core)
+        self._positions = None
+        self._types = None
+        self._time = 0.0
+        self._rng = None
+        self._force_fn = None
+
+    def inputs(self):
+        return {}
+
+    def outputs(self):
+        return {
+            'n_cells': 'overwrite[integer]',
+            'gyration_radius': 'overwrite[float]',
+            'mean_neighbor_distance': 'overwrite[float]',
+            'sorting_score': 'overwrite[float]',
+            'type_radial_spread': 'overwrite[float]',
+            'center_x': 'overwrite[float]',
+            'center_y': 'overwrite[float]',
+            'center_z': 'overwrite[float]',
+        }
+
+    def _build(self):
+        if self._positions is not None:
+            return
+        cfg = self.config
+        self._rng = np.random.default_rng(cfg['seed'])
+        if cfg['init'] == 'random_sphere':
+            self._positions = random_sphere(
+                cfg['n_cells'], cfg['init_dist'], seed=cfg['seed'])
+        elif cfg['init'] == 'relaxed_sphere':
+            self._positions = relaxed_sphere(
+                cfg['n_cells'], cfg['init_dist'],
+                seed=cfg['seed'],
+                n_relax_steps=cfg['init_relax_steps'])
+        else:
+            raise ValueError(f'Unknown init: {cfg["init"]}')
+
+        self._types = self._assign_types(cfg['n_cells'])
+
+        if cfg['force_kernel'] not in FORCE_KERNELS:
+            raise ValueError(
+                f'Unknown force_kernel: {cfg["force_kernel"]!r}. '
+                f'Available: {sorted(FORCE_KERNELS)}')
+        self._force_fn = FORCE_KERNELS[cfg['force_kernel']]
+
+    def _assign_types(self, n):
+        cfg = self.config
+        if cfg['n_types'] <= 1:
+            return np.zeros(n, dtype=np.int32)
+        if cfg['type_mode'] == 'mixed':
+            return self._rng.integers(0, cfg['n_types'], size=n).astype(np.int32)
+        if cfg['type_mode'] == 'inner_outer':
+            centroid = self._positions.mean(axis=0)
+            r = np.linalg.norm(self._positions - centroid, axis=1)
+            thresh = np.median(r)
+            return (r > thresh).astype(np.int32)
+        if cfg['type_mode'] == 'hemispheres':
+            return (self._positions[:, 0] > 0).astype(np.int32)
+        raise ValueError(f'Unknown type_mode: {cfg["type_mode"]}')
+
+    def _force_params(self):
+        cfg = self.config
+        r_cut = cfg['r_cut'] if cfg['r_cut'] > 0 else np.inf
+        return {
+            'L_0': cfg['L_0'],
+            'r_cut': r_cut,
+            'r_min': cfg['r_min'],
+            'r_max': cfg['r_max'],
+            'r_eq_same_lo': cfg['r_eq_same_lo'],
+            'r_eq_same_hi': cfg['r_eq_same_hi'],
+            'r_eq_diff_lo': cfg['r_eq_diff_lo'],
+            'r_eq_diff_hi': cfg['r_eq_diff_hi'],
+            'eps': cfg['eps'],
+        }
+
+    def _wall_force(self, positions):
+        cfg = self.config
+        if cfg['wall_radius'] <= 0:
+            return 0.0
+        r = np.linalg.norm(positions, axis=1, keepdims=True)
+        overflow = np.maximum(r - cfg['wall_radius'], 0.0)
+        direction = -positions / np.maximum(r, 1e-9)
+        return cfg['wall_strength'] * overflow * direction
+
+    def _take_step(self, dt):
+        """Compute pair-wise forces and advance positions by one Euler step.
+
+        Mirrors yalla's ``cells.take_step<force>(dt)`` semantics.
+        """
+        forces = self._force_fn(self._positions, self._types, self._force_params())
+        forces = forces + self._wall_force(self._positions)
+        self._positions = self._positions + dt * forces / self.config['damping']
+
+    def _proliferate(self, dt):
+        cfg = self.config
+        if cfg['proliferation_rate'] <= 0:
+            return
+        n = self._positions.shape[0]
+        if n >= cfg['n_max']:
+            return
+        p = 1.0 - np.exp(-cfg['proliferation_rate'] * dt)
+        dividing = self._rng.random(n) < p
+        n_new = int(min(dividing.sum(), cfg['n_max'] - n))
+        if n_new == 0:
+            return
+        parent_idx = np.where(dividing)[0][:n_new]
+        theta = np.arccos(2.0 * self._rng.random(n_new) - 1.0)
+        phi = self._rng.random(n_new) * 2.0 * np.pi
+        offset = np.stack([
+            np.sin(theta) * np.cos(phi),
+            np.sin(theta) * np.sin(phi),
+            np.cos(theta),
+        ], axis=1) * cfg['proliferation_mean_dist']
+        daughters = self._positions[parent_idx] + offset
+        daughter_types = self._types[parent_idx].copy()
+        if cfg['n_types'] > 1 and cfg['proliferation_type_bias'] < 1.0:
+            flip = self._rng.random(n_new) > cfg['proliferation_type_bias']
+            daughter_types = np.where(
+                flip, 1 - daughter_types, daughter_types).astype(np.int32)
+        self._positions = np.vstack([self._positions, daughters])
+        self._types = np.concatenate([self._types, daughter_types])
+
+    def _summary(self):
+        X = self._positions
+        n = X.shape[0]
+        if n == 0:
+            return {
+                'n_cells': 0, 'gyration_radius': 0.0,
+                'mean_neighbor_distance': 0.0, 'sorting_score': 0.0,
+                'type_radial_spread': 0.0,
+                'center_x': 0.0, 'center_y': 0.0, 'center_z': 0.0,
+            }
+        centroid = X.mean(axis=0)
+        radii = np.linalg.norm(X - centroid, axis=1)
+        rg = float(np.sqrt((radii ** 2).mean()))
+        mean_nn = 0.0
+        sort_score = 1.0
+        radial_spread = 0.0
+        if n >= 2:
+            disp = X[:, None, :] - X[None, :, :]
+            d = np.linalg.norm(disp, axis=-1)
+            np.fill_diagonal(d, np.inf)
+            nearest = d.min(axis=1)
+            mean_nn = float(nearest.mean())
+            if self.config['n_types'] > 1 and len(np.unique(self._types)) > 1:
+                # Local same-type neighbour fraction (k=3). Diagnostic only —
+                # sensitive to geometry; use type_radial_spread for
+                # inner/outer sorting.
+                k = min(3, n - 1)
+                nn_idx = np.argpartition(d, kth=k, axis=1)[:, :k]
+                nn_types = self._types[nn_idx]
+                same = (nn_types == self._types[:, None])
+                sort_score = float(same.mean())
+                # Radial spread: difference between mean radial distance of
+                # type-1 and type-0 cells. Positive when type-1 is pushed
+                # outward (the canonical differential-adhesion outcome).
+                mask0 = self._types == 0
+                mask1 = self._types == 1
+                r0 = float(radii[mask0].mean()) if mask0.any() else 0.0
+                r1 = float(radii[mask1].mean()) if mask1.any() else 0.0
+                radial_spread = r1 - r0
+        return {
+            'n_cells': int(n),
+            'gyration_radius': rg,
+            'mean_neighbor_distance': mean_nn,
+            'sorting_score': sort_score,
+            'type_radial_spread': radial_spread,
+            'center_x': float(centroid[0]),
+            'center_y': float(centroid[1]),
+            'center_z': float(centroid[2]),
+        }
+
+    def initial_state(self):
+        self._build()
+        return self._summary()
+
+    def update(self, state, interval):
+        self._build()
+        dt = self.config['dt']
+        n_steps = max(1, int(round(interval / dt)))
+        sub_dt = interval / n_steps
+        for _ in range(n_steps):
+            self._take_step(sub_dt)
+            self._proliferate(sub_dt)
+            self._time += sub_dt
+        return self._summary()
+
+    def snapshot(self):
+        """Return the full per-agent state for visualisation.
+
+        Returns a dict with ``positions`` (list of [x,y,z]), ``types``
+        (list of ints), ``n_cells``, and ``time``.
+        """
+        self._build()
+        return {
+            'positions': self._positions.tolist(),
+            'types': self._types.tolist(),
+            'n_cells': int(self._positions.shape[0]),
+            'time': float(self._time),
+        }
