@@ -1,12 +1,15 @@
 # pbg-yalla
 
-A **process-bigraph** wrapper for a NumPy port of
-[ya||a](https://github.com/germannp/yalla) — "yet another parallel
-agent-based model for morphogenesis." ya||a is a GPU-only C++/CUDA
-framework; `pbg-yalla` re-implements its core pair-wise ABM design
-(Solution + force kernel + Euler stepping) in vectorized NumPy so it
-runs on any platform, and exposes it as a `process-bigraph` `Process`
-that can be wired into Composites.
+Process-bigraph wrapper for a NumPy port of [ya||a](https://github.com/germannp/yalla), a pair-wise agent-based model for morphogenesis.
+
+**[View Interactive Demo Report](https://vivarium-collective.github.io/pbg-yalla/)** — spring relaxation, differential-adhesion cell sorting, and proliferation growth with Three.js 3D agent viewers, Plotly charts, and bigraph architecture diagrams.
+
+## What it does
+
+ya||a is a GPU-only C++/CUDA framework; `pbg-yalla` re-implements its
+core pair-wise ABM design (Solution + force kernel + Euler stepping) in
+vectorized NumPy so it runs on any platform, and exposes it as a
+`process-bigraph` `Process` that can be wired into Composites.
 
 The force kernels are direct ports of yalla's example models:
 
