@@ -1,5 +1,6 @@
 name: yalla-springs-with-viz
 description: "yalla pair-wise ABM demo with a wired Visualization Step. Each update produces a Plotly HTML figure of the running scalar trajectories, written to the 'viz_html' store."
+tags: [cells, mechanics, demo, visualization]
 
 requires:
   processes: [YallaProcess, YallaSummaryPlots, RAMEmitter]

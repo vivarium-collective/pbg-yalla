@@ -1,5 +1,6 @@
 name: yalla-springs-demo
 description: "Tiny yalla pair-wise ABM demo: a small random sphere of agents relaxes under a short-range spring kernel. Emits gyration_radius, mean_neighbor_distance, sorting_score, and n_cells each step."
+tags: [cells, mechanics, demo]
 
 requires:
   processes: [YallaProcess, RAMEmitter]
