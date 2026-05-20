@@ -25,6 +25,7 @@ from process_bigraph import allocate_core
 from process_bigraph.emitter import RAMEmitter
 
 from pbg_yalla.processes import YallaProcess
+from pbg_yalla.reproduction import YallaReproductionProcess
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +38,10 @@ def register_yalla(core=None):
     Visualization registered."""
     if core is None:
         core = allocate_core()
+    # Real ya||a GPU bridge (default headline class)...
     core.register_link('YallaProcess', YallaProcess)
+    # ...and the runs-anywhere NumPy reproduction used by the demo + default specs.
+    core.register_link('YallaReproductionProcess', YallaReproductionProcess)
     # Two aliases — the legacy hand-coded factory wires
     # ``local:ram-emitter`` while the composite-spec wiring uses the
     # canonical ``local:RAMEmitter`` name.
@@ -67,11 +71,14 @@ def make_yalla_document(
     wall_strength=5.0,
     **extra_config,
 ):
-    """Build a composite document wiring a ``YallaProcess`` to an emitter.
+    """Build a composite document wiring the NumPy reproduction to an emitter.
 
+    Uses :class:`~pbg_yalla.reproduction.YallaReproductionProcess` so the demo
+    and programmatic API run without a GPU. (For the real ya||a GPU bridge,
+    target ``local:YallaProcess`` or load the ``yalla-real-springs`` spec.)
     The process exposes scalar summary ports (n_cells, gyration_radius,
-    mean_neighbor_distance, sorting_score, center_{x,y,z}) which are
-    collected by a RAMEmitter.
+    mean_neighbor_distance, sorting_score, center_{x,y,z}) collected by a
+    RAMEmitter.
     """
     cfg = {
         'n_cells': n_cells,
@@ -94,7 +101,7 @@ def make_yalla_document(
     return {
         'yalla': {
             '_type': 'process',
-            'address': 'local:YallaProcess',
+            'address': 'local:YallaReproductionProcess',
             'config': cfg,
             'interval': interval,
             'inputs': {},

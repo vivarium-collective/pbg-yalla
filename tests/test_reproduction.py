@@ -1,10 +1,10 @@
-"""Unit tests for YallaProcess and the force kernels."""
+"""Unit tests for YallaReproductionProcess (NumPy reproduction) and kernels."""
 
 import numpy as np
 import pytest
 from process_bigraph import allocate_core
 
-from pbg_yalla.processes import YallaProcess
+from pbg_yalla.reproduction import YallaReproductionProcess
 from pbg_yalla.force_kernels import FORCE_KERNELS, spring, differential_adhesion, relu
 from pbg_yalla.inits import random_sphere
 
@@ -12,12 +12,12 @@ from pbg_yalla.inits import random_sphere
 @pytest.fixture
 def core():
     c = allocate_core()
-    c.register_link('YallaProcess', YallaProcess)
+    c.register_link('YallaReproductionProcess', YallaReproductionProcess)
     return c
 
 
 def test_instantiation(core):
-    proc = YallaProcess(
+    proc = YallaReproductionProcess(
         config={'n_cells': 20, 'force_kernel': 'spring', 'seed': 1},
         core=core)
     assert proc.config['n_cells'] == 20
@@ -25,7 +25,7 @@ def test_instantiation(core):
 
 
 def test_defaults(core):
-    proc = YallaProcess(config={}, core=core)
+    proc = YallaReproductionProcess(config={}, core=core)
     assert proc.config['n_cells'] == 200
     assert proc.config['force_kernel'] == 'spring'
     assert proc.config['dt'] == 0.05
@@ -33,7 +33,7 @@ def test_defaults(core):
 
 
 def test_initial_state(core):
-    proc = YallaProcess(
+    proc = YallaReproductionProcess(
         config={'n_cells': 50, 'force_kernel': 'spring', 'seed': 1},
         core=core)
     s = proc.initial_state()
@@ -44,7 +44,7 @@ def test_initial_state(core):
 
 
 def test_outputs_schema(core):
-    proc = YallaProcess(config={}, core=core)
+    proc = YallaReproductionProcess(config={}, core=core)
     outs = proc.outputs()
     expected = {
         'n_cells', 'gyration_radius', 'mean_neighbor_distance',
@@ -54,7 +54,7 @@ def test_outputs_schema(core):
 
 
 def test_spring_contracts_cluster(core):
-    proc = YallaProcess(
+    proc = YallaReproductionProcess(
         config={'n_cells': 80, 'force_kernel': 'spring',
                 'L_0': 0.4, 'dt': 0.02, 'seed': 1},
         core=core)
@@ -71,7 +71,7 @@ def test_sorting_produces_radial_segregation(core):
     # of the cluster. We measure the mean radial distance from the centroid
     # for each type and check the spread grows.
     import numpy as np
-    proc = YallaProcess(
+    proc = YallaReproductionProcess(
         config={
             'n_cells': 100,
             'force_kernel': 'differential_adhesion',
@@ -102,7 +102,7 @@ def test_sorting_produces_radial_segregation(core):
 def test_type_radial_spread_grows(core):
     # Differential adhesion should pull one type inward relative to the
     # other. We check the ``type_radial_spread`` output port directly.
-    proc = YallaProcess(
+    proc = YallaReproductionProcess(
         config={
             'n_cells': 100,
             'force_kernel': 'differential_adhesion',
@@ -120,7 +120,7 @@ def test_type_radial_spread_grows(core):
 
 
 def test_proliferation_grows_population(core):
-    proc = YallaProcess(
+    proc = YallaReproductionProcess(
         config={
             'n_cells': 30, 'force_kernel': 'relu',
             'r_max': 1.0, 'dt': 0.1,
@@ -135,7 +135,7 @@ def test_proliferation_grows_population(core):
 
 
 def test_n_max_respected(core):
-    proc = YallaProcess(
+    proc = YallaReproductionProcess(
         config={
             'n_cells': 40, 'force_kernel': 'relu',
             'r_max': 1.0, 'dt': 0.1,
@@ -149,7 +149,7 @@ def test_n_max_respected(core):
 
 
 def test_unknown_kernel_raises(core):
-    proc = YallaProcess(
+    proc = YallaReproductionProcess(
         config={'n_cells': 10, 'force_kernel': 'does_not_exist'},
         core=core)
     with pytest.raises(ValueError, match='Unknown force_kernel'):
@@ -157,7 +157,7 @@ def test_unknown_kernel_raises(core):
 
 
 def test_snapshot(core):
-    proc = YallaProcess(
+    proc = YallaReproductionProcess(
         config={'n_cells': 30, 'force_kernel': 'spring', 'seed': 1},
         core=core)
     proc.initial_state()
@@ -173,7 +173,7 @@ def test_chemotaxis_pulls_toward_source(core):
     # centred at (-3, 0, 0). Check the population centroid shifts toward
     # the source.
     import numpy as np
-    proc = YallaProcess(
+    proc = YallaReproductionProcess(
         config={
             'n_cells': 40, 'force_kernel': 'relu',
             'r_max': 1.0, 'dt': 0.05,
@@ -203,7 +203,7 @@ def test_chemotaxis_type_selective(core):
     # adhesion drag is minimal — the responsive type should reach the
     # source while the inert type stays broadly in place.
     import numpy as np
-    proc = YallaProcess(
+    proc = YallaReproductionProcess(
         config={
             'n_cells': 40, 'force_kernel': 'spring',
             'L_0': 0.5, 'r_cut': 0.8, 'dt': 0.05,
@@ -237,7 +237,7 @@ def test_chemotaxis_type_selective(core):
 
 def test_wall_confines_cells(core):
     # Spring alone would expand a tight cluster; the wall should hold it in
-    proc = YallaProcess(
+    proc = YallaReproductionProcess(
         config={'n_cells': 60, 'force_kernel': 'spring',
                 'L_0': 2.0, 'dt': 0.02, 'seed': 1,
                 'wall_radius': 1.0, 'wall_strength': 20.0,

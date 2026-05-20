@@ -16,7 +16,7 @@ import time as _time
 import numpy as np
 from process_bigraph import allocate_core
 
-from pbg_yalla.processes import YallaProcess
+from pbg_yalla.reproduction import YallaReproductionProcess
 from pbg_yalla.composites import make_yalla_document
 
 
@@ -172,10 +172,10 @@ COLOR_SCHEMES = {
 def run_simulation(cfg_entry):
     """Run one configuration, returning snapshots and wall-clock runtime."""
     core = allocate_core()
-    core.register_link('YallaProcess', YallaProcess)
+    core.register_link('YallaReproductionProcess', YallaReproductionProcess)
 
     t0 = _time.perf_counter()
-    proc = YallaProcess(config=cfg_entry['config'], core=core)
+    proc = YallaReproductionProcess(config=cfg_entry['config'], core=core)
     state0 = proc.initial_state()
     snap0 = proc.snapshot()
 
@@ -223,7 +223,7 @@ def generate_bigraph_image(cfg_entry):
     doc = {
         'yalla': {
             '_type': 'process',
-            'address': 'local:YallaProcess',
+            'address': 'local:YallaReproductionProcess',
             'config': {'force_kernel': cfg_entry['config']['force_kernel']},
             'interval': cfg_entry['total_time'] / cfg_entry['n_snapshots'],
             'inputs': {},

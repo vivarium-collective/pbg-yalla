@@ -1,45 +1,46 @@
-name: yalla-springs-with-viz
-description: "yalla pair-wise ABM demo (NumPy reproduction — runs without a GPU) with a wired Visualization Step. Each update produces a Plotly HTML figure of the running scalar trajectories, written to the 'viz_html' store."
-tags: [cells, mechanics, demo, visualization, reproduction]
+name: yalla-real-springs
+description: "Pair-wise spring relaxation driven by the REAL ya||a GPU solver (requires CUDA + an NVIDIA GPU). Generates a .cu model, compiles it with nvcc against a ya||a checkout, and round-trips agent state through the compiled binary each step. On a CPU/macOS host this raises YallaCudaUnavailable — use yalla-springs-demo (reproduction) instead."
+tags: [cells, mechanics, demo, yalla, requires-cuda]
 
 requires:
-  processes: [YallaReproductionProcess, YallaSummaryPlots, RAMEmitter]
+  processes: [YallaProcess, RAMEmitter]
 
 parameters:
   n_cells:
     type: int
-    default: 40
-    description: "Initial number of agents in the random sphere."
+    default: 200
+    description: "Number of agents in the random sphere (fixed population)."
   force_kernel:
     type: string
     default: "spring"
-    description: "Pair-wise force kernel."
+    description: "Native ya||a force kernel: spring, differential_adhesion, or relu."
   dt:
     type: float
-    default: 0.02
-    description: "Internal integrator sub-step size."
+    default: 0.001
+    description: "ya||a integrator step size (matches the springs.cu example)."
   interval:
     type: float
-    default: 0.5
-    description: "Process interval."
+    default: 0.05
+    description: "Process interval; the binary runs round(interval/dt) take_step calls."
   seed:
     type: int
     default: 1
-    description: "RNG seed for reproducibility."
-  viz_title:
+    description: "RNG seed for the initial sphere (built in NumPy, then handed to ya||a)."
+  cuda_arch:
     type: string
-    default: "yalla ABM summary"
-    description: "Title displayed at the top of the Plotly figure."
+    default: "sm_60"
+    description: "nvcc target architecture; set to match your GPU (e.g. sm_70, sm_80)."
 
 state:
   yalla:
     _type: process
-    address: "local:YallaReproductionProcess"
+    address: "local:YallaProcess"
     config:
       n_cells: "${n_cells}"
       force_kernel: "${force_kernel}"
       dt: "${dt}"
       seed: "${seed}"
+      cuda_arch: "${cuda_arch}"
       init: "random_sphere"
       init_dist: 0.5
       L_0: 0.5
@@ -63,20 +64,6 @@ state:
     center_x: 0.0
     center_y: 0.0
     center_z: 0.0
-    viz_html: ""
-  viz:
-    _type: step
-    address: "local:YallaSummaryPlots"
-    config:
-      title: "${viz_title}"
-    inputs:
-      n_cells: ["stores", "n_cells"]
-      gyration_radius: ["stores", "gyration_radius"]
-      mean_neighbor_distance: ["stores", "mean_neighbor_distance"]
-      sorting_score: ["stores", "sorting_score"]
-      time: ["global_time"]
-    outputs:
-      html: ["stores", "viz_html"]
   emitter:
     _type: step
     address: "local:RAMEmitter"

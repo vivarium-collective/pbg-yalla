@@ -4,14 +4,15 @@ import pytest
 from process_bigraph import Composite, allocate_core, gather_emitter_results
 from process_bigraph.emitter import RAMEmitter
 
-from pbg_yalla.processes import YallaProcess
+from pbg_yalla.reproduction import YallaReproductionProcess
 from pbg_yalla.composites import make_yalla_document
 
 
 @pytest.fixture
 def core():
+    # make_yalla_document wires the runs-anywhere reproduction.
     c = allocate_core()
-    c.register_link('YallaProcess', YallaProcess)
+    c.register_link('YallaReproductionProcess', YallaReproductionProcess)
     c.register_link('ram-emitter', RAMEmitter)
     return c
 

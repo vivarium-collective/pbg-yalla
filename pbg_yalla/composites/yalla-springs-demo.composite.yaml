@@ -1,9 +1,9 @@
 name: yalla-springs-demo
-description: "Tiny yalla pair-wise ABM demo: a small random sphere of agents relaxes under a short-range spring kernel. Emits gyration_radius, mean_neighbor_distance, sorting_score, and n_cells each step."
-tags: [cells, mechanics, demo]
+description: "Tiny yalla pair-wise ABM demo (NumPy reproduction — runs without a GPU): a small random sphere of agents relaxes under a short-range spring kernel. Emits gyration_radius, mean_neighbor_distance, sorting_score, and n_cells each step. For the real ya||a GPU solver see yalla-real-springs."
+tags: [cells, mechanics, demo, reproduction]
 
 requires:
-  processes: [YallaProcess, RAMEmitter]
+  processes: [YallaReproductionProcess, RAMEmitter]
 
 parameters:
   n_cells:
@@ -30,7 +30,7 @@ parameters:
 state:
   yalla:
     _type: process
-    address: "local:YallaProcess"
+    address: "local:YallaReproductionProcess"
     config:
       n_cells: "${n_cells}"
       force_kernel: "${force_kernel}"

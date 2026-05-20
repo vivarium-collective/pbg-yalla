@@ -155,7 +155,9 @@ def main(spec_name: str | None = None, n_steps: int = 20,
         specs = list_composite_specs()
         if not specs:
             raise SystemExit("No *.composite.yaml found in pbg_yalla/composites/")
-        spec_name = specs[0]
+        # Default to a runs-anywhere reproduction spec; the real-yalla spec
+        # needs CUDA and would crash on a GPU-less host.
+        spec_name = next((s for s in specs if "real" not in s), specs[0])
 
     print(f"Running composite '{spec_name}' for {n_steps} steps...")
     spec, results, step_interval, viz_html = run(spec_name, n_steps=n_steps)
