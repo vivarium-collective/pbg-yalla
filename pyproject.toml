@@ -27,6 +27,7 @@ dependencies = [
 dev = ["pytest", "matplotlib", "bigraph-viz"]
 
 [tool.uv.sources]
+vivarium-dashboard = { git = "https://github.com/vivarium-collective/vivarium-dashboard.git", branch = "main" }
 pbg-superpowers = { git = "https://github.com/vivarium-collective/pbg-superpowers.git", branch = "main" }
 
 [tool.setuptools.packages.find]
